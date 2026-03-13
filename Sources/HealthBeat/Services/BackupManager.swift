@@ -9,10 +9,7 @@ struct BackupCategory: Identifiable {
     var id: String { key }
 
     static let all: [BackupCategory] = [
-        BackupCategory(key: "mysqlConfig_v1", displayName: "MySQL Connection", icon: "cylinder.fill", colorName: "orange"),
-        BackupCategory(key: "locationConfig_v1", displayName: "Location Configuration", icon: "location.fill", colorName: "blue"),
-        BackupCategory(key: "geofences_v1", displayName: "Geo-fences & Places", icon: "mappin.and.ellipse", colorName: "green"),
-        BackupCategory(key: "place_categories_v1", displayName: "Place Categories", icon: "tag.fill", colorName: "purple"),
+        BackupCategory(key: "freerepsConfig_v1", displayName: "FreeReps Connection", icon: "server.rack", colorName: "orange"),
         BackupCategory(key: "com.healthbeat.syncSnapshot", displayName: "Sync Statuses", icon: "arrow.triangle.2.circlepath", colorName: "teal"),
         BackupCategory(key: "hk_permissions_requested", displayName: "Health Permissions", icon: "heart.fill", colorName: "red"),
         BackupCategory(key: "backupConfig_v1", displayName: "Backup Settings", icon: "gearshape.fill", colorName: "gray"),
@@ -43,10 +40,7 @@ final class BackupManager {
 
     /// All UserDefaults keys the app uses for persistent data.
     private let backupKeys: [String] = [
-        "mysqlConfig_v1",
-        "locationConfig_v1",
-        "geofences_v1",
-        "place_categories_v1",
+        "freerepsConfig_v1",
         "com.healthbeat.syncSnapshot",
         "hk_permissions_requested",
         "backupConfig_v1",

@@ -3,7 +3,7 @@ import HealthKit
 import UIKit
 import UserNotifications
 
-/// Manages HKObserverQuery-based background delivery for continuous HealthKit → MySQL sync.
+/// Manages HKObserverQuery-based background delivery for continuous HealthKit → FreeReps sync.
 ///
 /// Other health apps use this pattern: register observer queries for each data type at launch,
 /// enable background delivery, and HealthKit wakes the app when new data is written. Unlike
@@ -104,7 +104,7 @@ final class BackgroundSyncManager {
         isSyncing = true
         defer { isSyncing = false }
 
-        let config = MySQLConfig.load()
+        let config = FreeRepsConfig.load()
 
         // Request extra background execution time from iOS.
         // The expiry handler cancels the sync task so runIncrementalSync exits cleanly

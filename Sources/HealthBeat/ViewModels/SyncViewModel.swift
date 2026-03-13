@@ -23,12 +23,6 @@ final class SyncViewModel: ObservableObject {
         state.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
-
-        // Reset local state when the database is wiped from Settings.
-        NotificationCenter.default.publisher(for: .healthBeatDatabaseDidReset)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.syncState.resetAllLocalState() }
-            .store(in: &cancellables)
     }
 
     var categories: [CategorySyncState] { syncState.categories }
@@ -49,7 +43,7 @@ final class SyncViewModel: ObservableObject {
     }
 
     func checkPrerequisites() {
-        let config = MySQLConfig.load()
+        let config = FreeRepsConfig.load()
         Task {
             let issues = await syncService.validatePrerequisites(config: config)
             self.prerequisiteIssues = issues
@@ -57,7 +51,7 @@ final class SyncViewModel: ObservableObject {
     }
 
     func startFullSync() {
-        let config = MySQLConfig.load()
+        let config = FreeRepsConfig.load()
         // Fire off prerequisite validation without blocking the sync
         Task {
             let issues = await syncService.validatePrerequisites(config: config)
@@ -68,7 +62,6 @@ final class SyncViewModel: ObservableObject {
         }
         let task = Task {
             await syncService.runFullSync(config: config)
-            refreshRecordCounts()
             refreshLatestHealthKitDates()
         }
         syncTask = task
@@ -81,22 +74,20 @@ final class SyncViewModel: ObservableObject {
     }
 
     func startCategorySync(categoryID: String) {
-        let config = MySQLConfig.load()
+        let config = FreeRepsConfig.load()
         syncTask = Task {
             await syncService.runSingleCategorySync(categoryID: categoryID, config: config)
-            refreshRecordCounts()
             refreshLatestHealthKitDates()
         }
     }
 
     /// Re-syncs a list of categories sequentially (used by data validation repair).
     func repairCategories(categoryIDs: [String]) {
-        let config = MySQLConfig.load()
+        let config = FreeRepsConfig.load()
         let task = Task {
             for catID in categoryIDs {
                 await syncService.runSingleCategorySync(categoryID: catID, config: config)
             }
-            refreshRecordCounts()
             refreshLatestHealthKitDates()
         }
         syncTask = task
@@ -105,19 +96,14 @@ final class SyncViewModel: ObservableObject {
 
     func resetCategory(categoryID: String) {
         guard !isAnySyncRunning else { return }
-        let config = MySQLConfig.load()
-        Task {
-            let mysql = MySQLService()
-            do {
-                try await mysql.connect(config: config)
-                try await SchemaService.deleteCategoryData(categoryID: categoryID, mysql: mysql)
-                await mysql.disconnect()
-                syncState.resetCategoryLocalState(categoryID)
-            } catch {
-                await mysql.disconnect()
-                syncState.errorMessage = "Reset failed: \(error.localizedDescription)"
-            }
-        }
+        // With FreeReps, server-side data management replaces client-side DB resets.
+        // Reset local sync state so the next sync re-sends all data for this category.
+        syncState.resetCategoryLocalState(categoryID)
+    }
+
+    func resetAllSyncState() {
+        guard !isAnySyncRunning else { return }
+        syncState.resetAllLocalState()
     }
 
     func refreshLatestHealthKitDates() {
@@ -178,89 +164,13 @@ final class SyncViewModel: ObservableObject {
             }
             return nil
         default:
-            // cat_activity_summaries, cat_medications: use different HK query types — skip
             return nil
         }
     }
 
     func refreshRecordCounts() {
-        let config = MySQLConfig.load()
-        Task {
-            do {
-                let mysql = MySQLService()
-                try await mysql.connect(config: config)
-
-                // Ensure schema is up-to-date so new tables exist
-                let _ = await SchemaService.initializeSchema(mysql: mysql)
-
-                let counts = await SchemaService.recordCounts(mysql: mysql)
-
-                // Query actual per-type counts from the quantity samples table
-                let typeRows = try await mysql.query(
-                    "SELECT type, COUNT(*) as cnt FROM health_quantity_samples GROUP BY type"
-                )
-                await mysql.disconnect()
-
-                // Map type → count
-                var qtyCountByType: [String: Int] = [:]
-                for row in typeRows {
-                    if let typeName = row["type"], let cntStr = row["cnt"], let cnt = Int(cntStr) {
-                        qtyCountByType[typeName] = cnt
-                    }
-                }
-
-                // Aggregate counts per HealthCategory
-                var qtyCountByCategory: [String: Int] = [:]
-                for typeDesc in HealthDataTypes.allQuantityTypes {
-                    let catID = "qty_\(typeDesc.category.rawValue)"
-                    qtyCountByCategory[catID, default: 0] += qtyCountByType[typeDesc.id] ?? 0
-                }
-
-                let catTotal = counts["health_category_samples"] ?? 0
-                let workoutTotal = counts["health_workouts"] ?? 0
-                let bpTotal = counts["health_blood_pressure"] ?? 0
-                let ecgTotal = counts["health_ecg"] ?? 0
-                let audioTotal = counts["health_audiograms"] ?? 0
-                let activityTotal = counts["health_activity_summaries"] ?? 0
-                let routeTotal = counts["health_workout_routes"] ?? 0
-                let medTotal = counts["health_medications"] ?? 0
-
-                for i in syncState.categories.indices {
-                    let id = syncState.categories[i].id
-                    if id.hasPrefix("qty_") {
-                        syncState.categories[i].recordCount = qtyCountByCategory[id] ?? 0
-                    } else if id == "cat_category" {
-                        syncState.categories[i].recordCount = catTotal
-                    } else if id == "cat_workouts" {
-                        syncState.categories[i].recordCount = workoutTotal
-                    } else if id == "cat_bp" {
-                        syncState.categories[i].recordCount = bpTotal
-                    } else if id == "cat_ecg" {
-                        syncState.categories[i].recordCount = ecgTotal
-                    } else if id == "cat_audiogram" {
-                        syncState.categories[i].recordCount = audioTotal
-                    } else if id == "cat_activity_summaries" {
-                        syncState.categories[i].recordCount = activityTotal
-                    } else if id == "cat_workout_routes" {
-                        syncState.categories[i].recordCount = routeTotal
-                    } else if id == "cat_medications" {
-                        syncState.categories[i].recordCount = medTotal
-                    }
-                }
-
-                // Use actual table COUNT(*) for the total — this includes any records
-                // whose types aren't in the current allQuantityTypes list, and is always
-                // accurate regardless of what was synced in the current session.
-                let qtyTotal = counts["health_quantity_samples"] ?? 0
-                syncState.totalRecords = qtyTotal + catTotal + workoutTotal + bpTotal + ecgTotal + audioTotal + activityTotal + routeTotal + medTotal
-                syncState.persist()
-
-            } catch {
-                let config = MySQLConfig.load()
-                if config.host != MySQLConfig.default.host {
-                    syncState.errorMessage = "Could not refresh record counts: \(error.localizedDescription)"
-                }
-            }
-        }
+        // Record counts are tracked locally in SyncState from ingest results.
+        // No direct DB query needed — counts accumulate from successful sync operations.
+        syncState.persist()
     }
 }

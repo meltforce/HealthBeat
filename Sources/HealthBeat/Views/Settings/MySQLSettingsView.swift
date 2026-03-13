@@ -1,10 +1,8 @@
 import SwiftUI
 
-struct MySQLSettingsView: View {
+struct FreeRepsSettingsView: View {
     @ObservedObject var vm: SettingsViewModel
     @ObservedObject private var iCloud = iCloudSyncService.shared
-    @State private var savedConfirmation = false
-    @State private var showResetConfirm = false
 
     var body: some View {
         Form {
@@ -26,68 +24,47 @@ struct MySQLSettingsView: View {
                 }
             }
 
-            Section("Connection") {
+            Section {
                 LabeledContent("Host") {
-                    TextField("192.168.1.1", text: $vm.config.host)
+                    TextField("freereps", text: $vm.config.host)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
                         .multilineTextAlignment(.trailing)
                 }
                 LabeledContent("Port") {
-                    TextField("3306", value: $vm.config.port, format: .number.grouping(.never))
+                    TextField("443", value: Binding(
+                        get: { Int(vm.config.port) },
+                        set: { vm.config.port = UInt16(clamping: $0) }
+                    ), format: .number.grouping(.never))
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                 }
-                LabeledContent("Database") {
-                    TextField("healthbeat", text: $vm.config.database)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .multilineTextAlignment(.trailing)
-                }
-            }
-
-            Section("Credentials") {
-                LabeledContent("Username") {
-                    TextField("healthbeat", text: $vm.config.username)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .multilineTextAlignment(.trailing)
-                }
-                LabeledContent("Password") {
-                    SecureField("password", text: $vm.config.password)
-                        .multilineTextAlignment(.trailing)
-                }
+                Toggle("Use HTTPS", isOn: $vm.config.useHTTPS)
+            } header: {
+                Text("Connection")
+            } footer: {
+                Text("Authentication is handled automatically via Tailscale. No credentials needed.")
             }
 
             Section {
-                Button {
-                    vm.saveConfig()
-                    savedConfirmation = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        savedConfirmation = false
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Spacer()
-                        if savedConfirmation {
-                            Image(systemName: "checkmark")
-                                .font(.subheadline.weight(.semibold))
-                            Text("Saved")
-                                .font(.subheadline.weight(.semibold))
-                        } else {
-                            Text("Save Settings")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        Spacer()
-                    }
-                    .foregroundStyle(savedConfirmation ? .green : .accentColor)
-                    .contentShape(Rectangle())
+                Picker("Initial Backfill", selection: Binding(
+                    get: { vm.config.backfillYears ?? 0 },
+                    set: { vm.config.backfillYears = $0 == 0 ? nil : $0 }
+                )) {
+                    Text("1 Year").tag(1)
+                    Text("2 Years").tag(2)
+                    Text("5 Years").tag(5)
+                    Text("10 Years").tag(10)
+                    Text("All Data").tag(0)
                 }
-                .buttonStyle(.plain)
+            } header: {
+                Text("Sync")
+            } footer: {
+                Text("How far back to sync HealthKit data on first full sync. Subsequent syncs only check recent data.")
             }
 
-            Section("Test & Initialize") {
+            Section {
                 Button {
                     vm.testConnection()
                 } label: {
@@ -99,96 +76,15 @@ struct MySQLSettingsView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-
-                Button {
-                    vm.initializeSchema()
-                } label: {
-                    HStack {
-                        Label("Initialize / Update Schema", systemImage: "tablecells.badge.ellipsis")
-                        Spacer()
-                        schemaInitIndicator
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-
-            Section {
-                Button(role: .destructive) {
-                    showResetConfirm = true
-                } label: {
-                    HStack {
-                        Label("Reset Database", systemImage: "trash.fill")
-                        Spacer()
-                        resetDatabaseIndicator
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(vm.resetDatabaseState == .testing)
-            } header: {
-                Text("Danger Zone")
-            } footer: {
-                Text("Permanently deletes all health records from MySQL. The database schema is preserved. This cannot be undone.")
-            }
-            .confirmationDialog(
-                "Reset Database?",
-                isPresented: $showResetConfirm,
-                titleVisibility: .visible
-            ) {
-                Button("Delete All Health Records", role: .destructive) {
-                    vm.resetDatabase()
-                }
-            } message: {
-                Text("This permanently deletes all health records from MySQL. The schema and tables are preserved but all data will be gone. This cannot be undone.")
-            }
-
-            // Auth tip
-            Section {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("MySQL 8.0 Note")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text("If connection fails with caching_sha2_password, run on your MySQL server:\nALTER USER 'user'@'%' IDENTIFIED WITH mysql_native_password BY 'password';")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
             }
         }
-        .navigationTitle("MySQL Settings")
+        .navigationTitle("FreeReps Settings")
+        .onChange(of: vm.config) { vm.saveConfig() }
     }
 
     @ViewBuilder
     private var connectionTestIndicator: some View {
         switch vm.connectionTestState {
-        case .idle:
-            EmptyView()
-        case .testing:
-            ProgressView().scaleEffect(0.7)
-        case .success(let msg):
-            Text(msg).font(.caption).foregroundStyle(.green).lineLimit(2)
-        case .failure(let msg):
-            Text(msg).font(.caption).foregroundStyle(.red).lineLimit(2)
-        }
-    }
-
-    @ViewBuilder
-    private var resetDatabaseIndicator: some View {
-        switch vm.resetDatabaseState {
-        case .idle:
-            EmptyView()
-        case .testing:
-            ProgressView().scaleEffect(0.7)
-        case .success(let msg):
-            Text(msg).font(.caption).foregroundStyle(.green).lineLimit(2)
-        case .failure(let msg):
-            Text(msg).font(.caption).foregroundStyle(.red).lineLimit(2)
-        }
-    }
-
-    @ViewBuilder
-    private var schemaInitIndicator: some View {
-        switch vm.schemaInitState {
         case .idle:
             EmptyView()
         case .testing:

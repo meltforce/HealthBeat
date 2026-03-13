@@ -10,11 +10,6 @@ struct ContentView: View {
                     Label("Sync", systemImage: "arrow.triangle.2.circlepath")
                 }
 
-            DataBrowserView()
-                .tabItem {
-                    Label("Browse", systemImage: "magnifyingglass")
-                }
-
             SettingsView(syncViewModel: syncViewModel)
                 .tabItem {
                     Label("Settings", systemImage: "gear")

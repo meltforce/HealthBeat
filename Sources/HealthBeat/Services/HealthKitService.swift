@@ -594,6 +594,125 @@ final class HealthKitService {
         }
     }
 
+    /// Aggregates quantity samples into fixed-interval buckets with min/avg/max.
+    /// Much faster than streaming individual samples for high-frequency types like heart rate.
+    struct AggregatedBucket {
+        let startDate: Date
+        let min: Double
+        let avg: Double
+        let max: Double
+    }
+
+    func queryAggregatedStatistics(
+        typeID: HKQuantityTypeIdentifier,
+        unit: HKUnit,
+        from startDate: Date,
+        until endDate: Date,
+        interval: TimeInterval
+    ) async throws -> [AggregatedBucket] {
+        guard let type = HKObjectType.quantityType(forIdentifier: typeID) else { return [] }
+
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        var dateComponents = DateComponents()
+        dateComponents.second = Int(interval)
+        // Anchor to midnight so buckets align to clock boundaries
+        let anchor = Calendar.current.startOfDay(for: startDate)
+
+        return try await withCheckedThrowingContinuation { cont in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: type,
+                quantitySamplePredicate: predicate,
+                options: [.discreteMin, .discreteAverage, .discreteMax],
+                anchorDate: anchor,
+                intervalComponents: dateComponents
+            )
+            query.initialResultsHandler = { _, collection, error in
+                if let error = error {
+                    cont.resume(throwing: error)
+                    return
+                }
+                guard let collection = collection else {
+                    cont.resume(returning: [])
+                    return
+                }
+                var buckets: [AggregatedBucket] = []
+                collection.enumerateStatistics(from: startDate, to: endDate) { stats, _ in
+                    guard let min = stats.minimumQuantity()?.doubleValue(for: unit),
+                          let avg = stats.averageQuantity()?.doubleValue(for: unit),
+                          let max = stats.maximumQuantity()?.doubleValue(for: unit) else { return }
+                    buckets.append(AggregatedBucket(startDate: stats.startDate, min: min, avg: avg, max: max))
+                }
+                cont.resume(returning: buckets)
+            }
+            store.execute(query)
+        }
+    }
+
+    /// Aggregates cumulative quantity samples into fixed-interval buckets with SUM.
+    /// Used for step_count, energy, distance, etc. where individual samples are meaningless.
+    struct CumulativeBucket {
+        let startDate: Date
+        let sum: Double
+    }
+
+    func queryCumulativeStatistics(
+        typeID: HKQuantityTypeIdentifier,
+        unit: HKUnit,
+        from startDate: Date,
+        until endDate: Date,
+        interval: TimeInterval
+    ) async throws -> [CumulativeBucket] {
+        guard let type = HKObjectType.quantityType(forIdentifier: typeID) else { return [] }
+
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        var dateComponents = DateComponents()
+        dateComponents.second = Int(interval)
+        let anchor = Calendar.current.startOfDay(for: startDate)
+
+        return try await withCheckedThrowingContinuation { cont in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: type,
+                quantitySamplePredicate: predicate,
+                options: [.cumulativeSum],
+                anchorDate: anchor,
+                intervalComponents: dateComponents
+            )
+            query.initialResultsHandler = { _, collection, error in
+                if let error = error {
+                    cont.resume(throwing: error)
+                    return
+                }
+                guard let collection = collection else {
+                    cont.resume(returning: [])
+                    return
+                }
+                var buckets: [CumulativeBucket] = []
+                collection.enumerateStatistics(from: startDate, to: endDate) { stats, _ in
+                    guard let sum = stats.sumQuantity()?.doubleValue(for: unit) else { return }
+                    buckets.append(CumulativeBucket(startDate: stats.startDate, sum: sum))
+                }
+                cont.resume(returning: buckets)
+            }
+            store.execute(query)
+        }
+    }
+
+    /// Lightweight existence check — returns true if at least one sample exists in the date range.
+    func sampleExists(for sampleType: HKSampleType, from startDate: Date, to endDate: Date) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+            let query = HKSampleQuery(
+                sampleType: sampleType,
+                predicate: predicate,
+                limit: 1,
+                sortDescriptors: nil
+            ) { _, samples, _ in
+                continuation.resume(returning: (samples?.count ?? 0) > 0)
+            }
+            store.execute(query)
+        }
+    }
+
     func streamCategorySamples(
         typeID: HKCategoryTypeIdentifier,
         from startDate: Date?,
@@ -731,121 +850,4 @@ final class HealthKitService {
 
 // MARK: - Helper extensions
 
-extension HKQuantitySample {
-    var sourceBundleID: String { sourceRevision.source.bundleIdentifier }
-    var sourceDisplayName: String { sourceRevision.source.name }
-    var deviceName: String? { device?.name }
 
-    func jsonMetadata() -> String? {
-        guard let meta = metadata, !meta.isEmpty else { return nil }
-        let simplified = meta.compactMapValues { v -> String? in
-            if let s = v as? String { return s }
-            if let n = v as? NSNumber { return n.stringValue }
-            return "\(v)"
-        }
-        return (try? JSONSerialization.data(withJSONObject: simplified))
-            .flatMap { String(data: $0, encoding: .utf8) }
-    }
-}
-
-extension HKCategorySample {
-    var sourceBundleID: String { sourceRevision.source.bundleIdentifier }
-    var sourceDisplayName: String { sourceRevision.source.name }
-    var deviceName: String? { device?.name }
-}
-
-extension HKWorkout {
-    var sourceBundleID: String { sourceRevision.source.bundleIdentifier }
-    var sourceDisplayName: String { sourceRevision.source.name }
-    var deviceName: String? { device?.name }
-
-    var activityTypeName: String {
-        switch workoutActivityType {
-        case .americanFootball: return "American Football"
-        case .archery: return "Archery"
-        case .australianFootball: return "Australian Football"
-        case .badminton: return "Badminton"
-        case .baseball: return "Baseball"
-        case .basketball: return "Basketball"
-        case .bowling: return "Bowling"
-        case .boxing: return "Boxing"
-        case .climbing: return "Climbing"
-        case .cricket: return "Cricket"
-        case .crossTraining: return "Cross Training"
-        case .curling: return "Curling"
-        case .cycling: return "Cycling"
-        case .dance: return "Dance"
-        case .elliptical: return "Elliptical"
-        case .equestrianSports: return "Equestrian"
-        case .fencing: return "Fencing"
-        case .fishing: return "Fishing"
-        case .functionalStrengthTraining: return "Functional Strength"
-        case .golf: return "Golf"
-        case .gymnastics: return "Gymnastics"
-        case .handball: return "Handball"
-        case .hiking: return "Hiking"
-        case .hockey: return "Hockey"
-        case .hunting: return "Hunting"
-        case .lacrosse: return "Lacrosse"
-        case .martialArts: return "Martial Arts"
-        case .mindAndBody: return "Mind & Body"
-        case .mixedCardio: return "Mixed Cardio"
-        case .paddleSports: return "Paddle Sports"
-        case .play: return "Play"
-        case .preparationAndRecovery: return "Recovery"
-        case .racquetball: return "Racquetball"
-        case .rowing: return "Rowing"
-        case .rugby: return "Rugby"
-        case .running: return "Running"
-        case .sailing: return "Sailing"
-        case .skatingSports: return "Skating"
-        case .snowSports: return "Snow Sports"
-        case .soccer: return "Soccer"
-        case .softball: return "Softball"
-        case .squash: return "Squash"
-        case .stairClimbing: return "Stair Climbing"
-        case .surfingSports: return "Surfing"
-        case .swimming: return "Swimming"
-        case .tableTennis: return "Table Tennis"
-        case .tennis: return "Tennis"
-        case .trackAndField: return "Track & Field"
-        case .traditionalStrengthTraining: return "Strength Training"
-        case .volleyball: return "Volleyball"
-        case .walking: return "Walking"
-        case .waterFitness: return "Water Fitness"
-        case .waterPolo: return "Water Polo"
-        case .waterSports: return "Water Sports"
-        case .wrestling: return "Wrestling"
-        case .yoga: return "Yoga"
-        case .highIntensityIntervalTraining: return "HIIT"
-        case .jumpRope: return "Jump Rope"
-        case .kickboxing: return "Kickboxing"
-        case .pilates: return "Pilates"
-        case .snowboarding: return "Snowboarding"
-        case .stairs: return "Stairs"
-        case .stepTraining: return "Step Training"
-        case .wheelchairWalkPace: return "Wheelchair Walk"
-        case .wheelchairRunPace: return "Wheelchair Run"
-        case .taiChi: return "Tai Chi"
-        case .mixedMetabolicCardioTraining: return "Metabolic Cardio"
-        case .discSports: return "Disc Sports"
-        case .fitnessGaming: return "Fitness Gaming"
-        case .cardioDance: return "Cardio Dance"
-        case .socialDance: return "Social Dance"
-        case .pickleball: return "Pickleball"
-        case .cooldown: return "Cooldown"
-        case .danceInspiredTraining: return "Dance Inspired Training"
-        case .barre: return "Barre"
-        case .coreTraining: return "Core Training"
-        case .crossCountrySkiing: return "Cross Country Skiing"
-        case .downhillSkiing: return "Downhill Skiing"
-        case .flexibility: return "Flexibility"
-        case .handCycling: return "Hand Cycling"
-        case .swimBikeRun: return "Triathlon"
-        case .transition: return "Transition"
-        case .underwaterDiving: return "Underwater Diving"
-        case .other: return "Other"
-        @unknown default: return "Workout"
-        }
-    }
-}

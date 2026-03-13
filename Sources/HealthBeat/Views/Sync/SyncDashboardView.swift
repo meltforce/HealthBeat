@@ -41,7 +41,7 @@ struct SyncDashboardView: View {
                             icon: "exclamationmark.triangle.fill",
                             color: .yellow,
                             title: "No Complete Baseline",
-                            message: "A full sync has never completed. Historical data may be missing from MySQL. Run Full Sync to establish a complete baseline."
+                            message: "A full sync has never completed. Historical data may be missing from FreeReps. Run Full Sync to establish a complete baseline."
                         )
                     }
                 }
@@ -244,25 +244,7 @@ struct SyncDashboardView: View {
         switch issue {
         case .healthPermissionsNotRequested, .somePermissionsDenied:
             navigateToHealthPermissions = true
-        case .missingDatabaseTables:
-            let config = MySQLConfig.load()
-            Task {
-                let mysql = MySQLService()
-                do {
-                    try await mysql.connect(config: config)
-                    let (ok, errMsg) = await SchemaService.initializeSchema(mysql: mysql)
-                    await mysql.disconnect()
-                    if ok {
-                        vm.prerequisiteIssues.removeAll { $0.id == issue.id }
-                    } else {
-                        vm.syncState.errorMessage = errMsg ?? "Schema initialization failed"
-                    }
-                } catch {
-                    await mysql.disconnect()
-                    vm.syncState.errorMessage = "Could not connect to MySQL: \(error.localizedDescription)"
-                }
-            }
-        case .databaseConnectionFailed:
+        case .connectionFailed:
             break
         case .healthDataUnavailable:
             break

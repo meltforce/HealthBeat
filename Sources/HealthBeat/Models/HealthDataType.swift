@@ -53,12 +53,23 @@ enum HealthCategory: String, CaseIterable, Identifiable {
 
 // MARK: - Quantity type descriptor
 
+/// How a quantity type should be synced.
+enum QuantitySyncStrategy {
+    /// Send each HKQuantitySample individually (low-frequency types like weight, resting HR).
+    case individual
+    /// Aggregate on-device into time buckets with min/avg/max (high-frequency types like heart rate).
+    case aggregate(interval: TimeInterval)
+    /// Aggregate cumulative metrics into time buckets with SUM (steps, energy, distance, etc.).
+    case aggregateCumulative(interval: TimeInterval)
+}
+
 struct QuantityTypeDescriptor: Identifiable {
     let id: String          // HKQuantityTypeIdentifier raw value
     let displayName: String
     let category: HealthCategory
     let unit: HKUnit
     let unitString: String  // for DB storage
+    var syncStrategy: QuantitySyncStrategy = .individual
 
     var hkIdentifier: HKQuantityTypeIdentifier { HKQuantityTypeIdentifier(rawValue: id) }
     var hkType: HKQuantityType? { HKObjectType.quantityType(forIdentifier: hkIdentifier) }
@@ -84,20 +95,20 @@ enum HealthDataTypes {
 
     static let allQuantityTypes: [QuantityTypeDescriptor] = [
         // Activity
-        .init(id: HKQuantityTypeIdentifier.stepCount.rawValue, displayName: "Steps", category: .activity, unit: .count(), unitString: "count"),
-        .init(id: HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue, displayName: "Walking+Running Distance", category: .activity, unit: .meter(), unitString: "m"),
-        .init(id: HKQuantityTypeIdentifier.distanceCycling.rawValue, displayName: "Cycling Distance", category: .activity, unit: .meter(), unitString: "m"),
-        .init(id: HKQuantityTypeIdentifier.distanceSwimming.rawValue, displayName: "Swimming Distance", category: .activity, unit: .meter(), unitString: "m"),
-        .init(id: HKQuantityTypeIdentifier.distanceWheelchair.rawValue, displayName: "Wheelchair Distance", category: .activity, unit: .meter(), unitString: "m"),
-        .init(id: HKQuantityTypeIdentifier.basalEnergyBurned.rawValue, displayName: "Resting Energy", category: .activity, unit: .kilocalorie(), unitString: "kcal"),
-        .init(id: HKQuantityTypeIdentifier.activeEnergyBurned.rawValue, displayName: "Active Energy", category: .activity, unit: .kilocalorie(), unitString: "kcal"),
-        .init(id: HKQuantityTypeIdentifier.flightsClimbed.rawValue, displayName: "Flights Climbed", category: .activity, unit: .count(), unitString: "count"),
-        .init(id: HKQuantityTypeIdentifier.appleExerciseTime.rawValue, displayName: "Exercise Minutes", category: .activity, unit: .minute(), unitString: "min"),
-        .init(id: HKQuantityTypeIdentifier.appleMoveTime.rawValue, displayName: "Move Time", category: .activity, unit: .minute(), unitString: "min"),
-        .init(id: HKQuantityTypeIdentifier.appleStandTime.rawValue, displayName: "Stand Time", category: .activity, unit: .minute(), unitString: "min"),
-        .init(id: HKQuantityTypeIdentifier.pushCount.rawValue, displayName: "Wheelchair Pushes", category: .activity, unit: .count(), unitString: "count"),
-        .init(id: HKQuantityTypeIdentifier.swimmingStrokeCount.rawValue, displayName: "Swimming Strokes", category: .activity, unit: .count(), unitString: "count"),
-        .init(id: HKQuantityTypeIdentifier.distanceDownhillSnowSports.rawValue, displayName: "Downhill Snow Sports Distance", category: .activity, unit: .meter(), unitString: "m"),
+        .init(id: HKQuantityTypeIdentifier.stepCount.rawValue, displayName: "Steps", category: .activity, unit: .count(), unitString: "count", syncStrategy: .aggregateCumulative(interval: 3600)),
+        .init(id: HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue, displayName: "Walking+Running Distance", category: .activity, unit: .meter(), unitString: "m", syncStrategy: .aggregateCumulative(interval: 3600)),
+        .init(id: HKQuantityTypeIdentifier.distanceCycling.rawValue, displayName: "Cycling Distance", category: .activity, unit: .meter(), unitString: "m", syncStrategy: .aggregateCumulative(interval: 3600)),
+        .init(id: HKQuantityTypeIdentifier.distanceSwimming.rawValue, displayName: "Swimming Distance", category: .activity, unit: .meter(), unitString: "m", syncStrategy: .aggregateCumulative(interval: 3600)),
+        .init(id: HKQuantityTypeIdentifier.distanceWheelchair.rawValue, displayName: "Wheelchair Distance", category: .activity, unit: .meter(), unitString: "m", syncStrategy: .aggregateCumulative(interval: 3600)),
+        .init(id: HKQuantityTypeIdentifier.basalEnergyBurned.rawValue, displayName: "Resting Energy", category: .activity, unit: .kilocalorie(), unitString: "kcal", syncStrategy: .aggregateCumulative(interval: 3600)),
+        .init(id: HKQuantityTypeIdentifier.activeEnergyBurned.rawValue, displayName: "Active Energy", category: .activity, unit: .kilocalorie(), unitString: "kcal", syncStrategy: .aggregateCumulative(interval: 3600)),
+        .init(id: HKQuantityTypeIdentifier.flightsClimbed.rawValue, displayName: "Flights Climbed", category: .activity, unit: .count(), unitString: "count", syncStrategy: .aggregateCumulative(interval: 3600)),
+        .init(id: HKQuantityTypeIdentifier.appleExerciseTime.rawValue, displayName: "Exercise Minutes", category: .activity, unit: .minute(), unitString: "min", syncStrategy: .aggregateCumulative(interval: 3600)),
+        .init(id: HKQuantityTypeIdentifier.appleMoveTime.rawValue, displayName: "Move Time", category: .activity, unit: .minute(), unitString: "min", syncStrategy: .aggregateCumulative(interval: 3600)),
+        .init(id: HKQuantityTypeIdentifier.appleStandTime.rawValue, displayName: "Stand Time", category: .activity, unit: .minute(), unitString: "min", syncStrategy: .aggregateCumulative(interval: 3600)),
+        .init(id: HKQuantityTypeIdentifier.pushCount.rawValue, displayName: "Wheelchair Pushes", category: .activity, unit: .count(), unitString: "count", syncStrategy: .aggregateCumulative(interval: 3600)),
+        .init(id: HKQuantityTypeIdentifier.swimmingStrokeCount.rawValue, displayName: "Swimming Strokes", category: .activity, unit: .count(), unitString: "count", syncStrategy: .aggregateCumulative(interval: 3600)),
+        .init(id: HKQuantityTypeIdentifier.distanceDownhillSnowSports.rawValue, displayName: "Downhill Snow Sports Distance", category: .activity, unit: .meter(), unitString: "m", syncStrategy: .aggregateCumulative(interval: 3600)),
         // Body
         .init(id: HKQuantityTypeIdentifier.bodyMass.rawValue, displayName: "Weight", category: .body, unit: .gramUnit(with: .kilo), unitString: "kg"),
         .init(id: HKQuantityTypeIdentifier.bodyMassIndex.rawValue, displayName: "BMI", category: .body, unit: .count(), unitString: "kg/m²"),

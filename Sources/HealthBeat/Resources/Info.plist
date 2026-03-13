@@ -4,7 +4,7 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>ee.klemens.healthbeat.sync</string>
+		<string>com.melter.healthbeat.sync</string>
 	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Health Beat</string>
@@ -24,16 +24,23 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Health Beat connects to your FreeReps server on the local network to sync health data.</string>
 	<key>NSHealthClinicalHealthRecordsShareUsageDescription</key>
-	<string>Health Beat reads your clinical health records, including medications, to sync them to your MySQL database.</string>
+	<string>Health Beat reads your clinical health records, including medications, to sync them to FreeReps.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Health Beat reads your Apple Health data to sync it to your MySQL database for analysis and backup.</string>
+	<string>Health Beat reads your Apple Health data to sync it to FreeReps for analysis and backup.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Health Beat may write sync metadata to Apple Health.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Health Beat tracks your location in the background to log GPS coordinates and detect when you arrive at or leave your defined places.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Health Beat uses your location to log GPS coordinates and detect place arrivals and departures.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
@@ -42,7 +49,6 @@
 	<array>
 		<string>processing</string>
 		<string>fetch</string>
-		<string>location</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

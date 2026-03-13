@@ -1,4 +1,3 @@
-import CoreLocation
 import SwiftUI
 import BackgroundTasks
 import UserNotifications
@@ -26,11 +25,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         UserDefaults.standard.register(defaults: ["backgroundSyncEnabled": true])
         Task { @MainActor in iCloudSyncService.shared.start() }
         registerBackgroundTasks()
-        if launchOptions?[.location] != nil {
-            LocationService.shared.handleGeofenceLaunch()
-        }
-        LocationService.shared.reloadAndStart()
-
         // Request notification permission for sync failure alerts
         BackgroundSyncManager.requestNotificationPermission()
 
@@ -51,7 +45,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        Task { await LocationService.shared.flushPendingLocations() }
         scheduleNextBackgroundSync()
 
         // Wrap auto-backup in a background task so iOS doesn't suspend us mid-write
@@ -69,7 +62,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     private func registerBackgroundTasks() {
         BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: "ee.klemens.healthbeat.sync",
+            forTaskWithIdentifier: "com.melter.healthbeat.sync",
             using: nil
         ) { task in
             self.handleBackgroundSync(task: task as! BGProcessingTask)
@@ -91,14 +84,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             return
         }
 
-        let config = MySQLConfig.load()
+        let config = FreeRepsConfig.load()
         let isFullSyncResume = UserDefaults.standard.bool(forKey: "pendingFullSyncResume")
 
         let syncTask: Task<Void, Never> = Task { @MainActor in
             // If a foreground sync is already running, skip — it will handle persisting
-            // state and scheduling follow-up work on its own. Without this guard, the
-            // BGProcessingTask would create a second SyncService and run a concurrent
-            // MySQL connection competing for row locks on the same tables.
+            // state and scheduling follow-up work on its own.
             guard !SyncService.isSyncRunning else {
                 task.setTaskCompleted(success: true)
                 return
@@ -131,7 +122,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func scheduleNextBackgroundSync() {
-        let request = BGProcessingTaskRequest(identifier: "ee.klemens.healthbeat.sync")
+        let request = BGProcessingTaskRequest(identifier: "com.melter.healthbeat.sync")
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = false
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 min

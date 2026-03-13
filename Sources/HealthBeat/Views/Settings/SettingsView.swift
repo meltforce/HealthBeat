@@ -6,20 +6,21 @@ struct SettingsView: View {
     @ObservedObject private var iCloud = iCloudSyncService.shared
     @AppStorage("keepScreenOnDuringSync") private var keepScreenOnDuringSync = true
     @AppStorage("backgroundSyncEnabled") private var backgroundSyncEnabled = true
+    @State private var showResetSyncConfirmation = false
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
+                Section("Connection") {
                     NavigationLink {
-                        MySQLSettingsView(vm: vm)
+                        FreeRepsSettingsView(vm: vm)
                     } label: {
                         HStack(spacing: 12) {
-                            iconBox("cylinder.fill", color: .orange)
+                            iconBox("server.rack", color: .orange)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("MySQL Connection")
+                                Text("FreeReps Connection")
                                     .font(.subheadline.weight(.semibold))
-                                Text("\(vm.config.host):\(vm.config.port) / \(vm.config.database)")
+                                Text(verbatim: "\(vm.config.host):\(vm.config.port)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
@@ -43,46 +44,31 @@ struct SettingsView: View {
                             }
                         }
                     }
+                }
 
-                    NavigationLink {
-                        LocationSettingsView()
-                    } label: {
+                Section("Sync") {
+                    Toggle(isOn: $backgroundSyncEnabled) {
                         HStack(spacing: 12) {
-                            iconBox("location.fill", color: iCloud.isCurrentDeviceActiveForAutoSync ? .blue : .secondary)
+                            iconBox("arrow.triangle.2.circlepath", color: backgroundSyncEnabled ? .blue : .secondary)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Location & Places")
+                                Text("Background Sync")
                                     .font(.subheadline.weight(.semibold))
-                                Text(locationSubtitle)
+                                Text(backgroundSyncEnabled
+                                    ? "Health data syncs automatically via FreeReps"
+                                    : "No data is synced in the background")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
                     }
 
-                    NavigationLink {
-                        PlaceCategoriesView()
-                    } label: {
+                    Toggle(isOn: $keepScreenOnDuringSync) {
                         HStack(spacing: 12) {
-                            iconBox("tag.fill", color: .purple)
+                            iconBox("sun.max.fill", color: .yellow)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Place Categories")
+                                Text("Keep Screen On")
                                     .font(.subheadline.weight(.semibold))
-                                Text("\(PlaceCategory.loadAll().count) categories")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    NavigationLink {
-                        BackupSettingsView()
-                    } label: {
-                        HStack(spacing: 12) {
-                            iconBox("externaldrive.fill", color: iCloud.isCurrentDeviceActiveForAutoSync ? .green : .secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Backup & Recovery")
-                                    .font(.subheadline.weight(.semibold))
-                                Text(backupSubtitle)
+                                Text("Prevent display sleep during full sync")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -103,9 +89,7 @@ struct SettingsView: View {
                             }
                         }
                     }
-                }
 
-                Section("Data Integrity") {
                     NavigationLink {
                         DataValidationView(syncViewModel: syncViewModel)
                     } label: {
@@ -114,7 +98,40 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Data Validation")
                                     .font(.subheadline.weight(.semibold))
-                                Text("Compare Apple Health vs database")
+                                Text("Compare Apple Health vs FreeReps")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    Button(role: .destructive) {
+                        showResetSyncConfirmation = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            iconBox("arrow.counterclockwise", color: .red)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Reset Sync State")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("Clears all sync progress. Next sync will re-send all data.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .disabled(syncViewModel.isAnySyncRunning)
+                }
+
+                Section("Backup") {
+                    NavigationLink {
+                        BackupSettingsView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            iconBox("externaldrive.fill", color: iCloud.isCurrentDeviceActiveForAutoSync ? .green : .secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Backup & Recovery")
+                                    .font(.subheadline.weight(.semibold))
+                                Text(backupSubtitle)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -124,53 +141,23 @@ struct SettingsView: View {
 
                 Section("About") {
                     LabeledContent("Version", value: appVersion)
-                    LabeledContent("MySQL Protocol", value: "Wire Protocol v4.1")
+                    LabeledContent("Backend", value: "FreeReps HTTP API")
                     LabeledContent("HealthKit Types", value: "\(HealthDataTypes.allQuantityTypes.count + HealthDataTypes.allCategoryTypes.count)")
-                }
-
-                Section("Sync Behavior") {
-                    Toggle(isOn: $backgroundSyncEnabled) {
-                        HStack(spacing: 12) {
-                            iconBox("arrow.triangle.2.circlepath", color: backgroundSyncEnabled ? .blue : .secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Background Sync")
-                                    .font(.subheadline.weight(.semibold))
-                                Text(backgroundSyncEnabled
-                                    ? "Health data, location, and geofence events sync automatically"
-                                    : "No data is written to MySQL in the background")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    Toggle(isOn: $keepScreenOnDuringSync) {
-                        HStack(spacing: 12) {
-                            iconBox("sun.max.fill", color: .yellow)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Keep Screen On")
-                                    .font(.subheadline.weight(.semibold))
-                                Text("Prevent display sleep during full sync")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
                 }
 
                 BrandFooter()
             }
             .navigationTitle("Settings")
             .onAppear { vm.refreshPermissionsState() }
+            .alert("Reset Sync State", isPresented: $showResetSyncConfirmation) {
+                Button("Reset", role: .destructive) {
+                    syncViewModel.resetAllSyncState()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This will clear all sync progress and cursors. The next sync will re-send all health data to FreeReps. Server-side data is not affected.")
+            }
         }
-    }
-
-    private var locationSubtitle: String {
-        if !iCloud.isCurrentDeviceActiveForAutoSync {
-            let device = iCloud.activeDeviceName ?? "another device"
-            return "Reporting via \(device)"
-        }
-        return LocationConfig.load().trackingEnabled ? "Tracking enabled" : "Tracking disabled"
     }
 
     private var backupSubtitle: String {

@@ -29,21 +29,15 @@ final class iCloudSyncService: ObservableObject {
         static let enabled        = "icloud_enabled"
         static let activeDevice   = "icloud_active_device_id"
         static let devices        = "icloud_devices"
-        static let mysqlConfig    = "mysql_config_v1"
+        static let freerepsConfig = "freereps_config_v1"
         static let syncSnapshot   = "sync_snapshot_v1"
-        static let locationConfig = "location_config_v1"
-        static let geofences      = "geofences_v1"
-        static let placeCategories = "place_categories_v1"
         static let backupConfig   = "backup_config_v1"
     }
 
     // Local UserDefaults keys (must match the keys used in each model file)
     private enum UDKey {
-        static let mysqlConfig     = "mysqlConfig_v1"
+        static let freerepsConfig  = "freerepsConfig_v1"
         static let syncSnapshot    = "com.healthbeat.syncSnapshot"
-        static let locationConfig  = "locationConfig_v1"
-        static let geofences       = "geofences_v1"
-        static let placeCategories = "place_categories_v1"
         static let backupConfig    = "backupConfig_v1"
     }
 
@@ -169,10 +163,10 @@ final class iCloudSyncService: ObservableObject {
 
     // MARK: - Push methods (called from model save() sites)
 
-    func pushMySQLConfig(_ config: MySQLConfig) {
+    func pushFreeRepsConfig(_ config: FreeRepsConfig) {
         guard iCloudSyncEnabled else { return }
         if let data = try? JSONEncoder().encode(config) {
-            kv.set(data, forKey: KVKey.mysqlConfig)
+            kv.set(data, forKey: KVKey.freerepsConfig)
             kv.synchronize()
         }
     }
@@ -181,30 +175,6 @@ final class iCloudSyncService: ObservableObject {
         guard iCloudSyncEnabled else { return }
         if let data = try? JSONEncoder().encode(snapshot) {
             kv.set(data, forKey: KVKey.syncSnapshot)
-            kv.synchronize()
-        }
-    }
-
-    func pushLocationConfig(_ config: LocationConfig) {
-        guard iCloudSyncEnabled else { return }
-        if let data = try? JSONEncoder().encode(config) {
-            kv.set(data, forKey: KVKey.locationConfig)
-            kv.synchronize()
-        }
-    }
-
-    func pushGeofences(_ fences: [GeoFence]) {
-        guard iCloudSyncEnabled else { return }
-        if let data = try? JSONEncoder().encode(fences) {
-            kv.set(data, forKey: KVKey.geofences)
-            kv.synchronize()
-        }
-    }
-
-    func pushPlaceCategories(_ categories: [PlaceCategory]) {
-        guard iCloudSyncEnabled else { return }
-        if let data = try? JSONEncoder().encode(categories) {
-            kv.set(data, forKey: KVKey.placeCategories)
             kv.synchronize()
         }
     }
@@ -288,19 +258,10 @@ final class iCloudSyncService: ObservableObject {
     // MARK: - Pull all remote values into UserDefaults
 
     private func pullAllToUserDefaults() {
-        if let data = kv.data(forKey: KVKey.mysqlConfig) {
-            UserDefaults.standard.set(data, forKey: UDKey.mysqlConfig)
+        if let data = kv.data(forKey: KVKey.freerepsConfig) {
+            UserDefaults.standard.set(data, forKey: UDKey.freerepsConfig)
         }
         pullSyncSnapshot()
-        if let data = kv.data(forKey: KVKey.locationConfig) {
-            UserDefaults.standard.set(data, forKey: UDKey.locationConfig)
-        }
-        if let data = kv.data(forKey: KVKey.geofences) {
-            UserDefaults.standard.set(data, forKey: UDKey.geofences)
-        }
-        if let data = kv.data(forKey: KVKey.placeCategories) {
-            UserDefaults.standard.set(data, forKey: UDKey.placeCategories)
-        }
         if let data = kv.data(forKey: KVKey.backupConfig) {
             UserDefaults.standard.set(data, forKey: UDKey.backupConfig)
         }
